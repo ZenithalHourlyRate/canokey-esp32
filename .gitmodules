@@ -1,0 +1,3 @@
+[submodule "main/canokey-core"]
+	path = main/canokey-core
+	url = git://github.com/canokeys/canokey-core.git
