@@ -12,10 +12,14 @@
 #include "freertos/task.h"
 
 // canokey-core
+#include "common.h"
+#include "apdu.h"
+#include "applets.h"
 #include "device.h"
 #include "usb_device.h"
 
 #include "dcd_esp32sx.h"
+#include "littlefs_api.h"
 
 static usb_phy_handle_t phy_hdl;
 static const char* TAG = "canokey-esp32";
@@ -34,6 +38,33 @@ esp_err_t usb_driver_install()
   dcd_int_enable();
   ESP_LOGI(TAG, "TinyUSB Driver installed");
   return ESP_OK;
+}
+
+#ifndef HW_VARIANT_NAME
+#define HW_VARIANT_NAME "CanoKey ESP32"
+#endif
+
+int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+
+  static const char *const hw_variant_str = HW_VARIANT_NAME;
+  size_t len = strlen(hw_variant_str);
+  memcpy(RDATA, hw_variant_str, len);
+  LL = len;
+  if (LL > LE) LL = LE;
+
+  return 0;
+}
+
+int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+
+  static const char *const hw_sn = "20220313";
+  memcpy(RDATA, hw_sn, 8);
+  LL = 8;
+  if (LL > LE) LL = LE;
+
+  return 0;
 }
 
 int strong_user_presence_test(void) {
@@ -101,10 +132,22 @@ void usb_resources_alloc(void) {
 
 void app_main(void)
 {
+  littlefs_init();
+
+  // avoid touch test
+  set_nfc_state(1);
+
   usb_device_init();
   usb_driver_install();
+
+  // Step 6: init applets
+  DBG_MSG("Init applets\n");
+  applets_install();
+  init_apdu_buffer();
+  DBG_MSG("Done\n");
+
   while(1) {
-    device_loop(1);
+    device_loop(0);
     vTaskDelay(10);
   }
 }
