@@ -209,7 +209,7 @@ void dcd_init()
 
 void dcd_set_address(uint8_t dev_addr)
 {
-  esp_rom_printf("DCD init - Set address : %u\n", dev_addr);
+  //esp_rom_printf("DCD init - Set address : %u\n", dev_addr);
   USB0.dcfg |= ((dev_addr & USB_DEVADDR_V) << USB_DEVADDR_S);
   // Response with status after changing device address
   // LOCAL: commented out because canokey stack does this
@@ -249,7 +249,7 @@ void dcd_disconnect()
 
 bool dcd_edpt_open(uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps)
 {
-  ESP_LOGV(TAG, "DCD endpoint opened");
+  //ESP_LOGV(TAG, "DCD endpoint opened");
 
   usb_out_endpoint_t *out_ep = &(USB0.out_ep_reg[0]);
   usb_in_endpoint_t *in_ep = &(USB0.in_ep_reg[0]);
@@ -261,13 +261,14 @@ bool dcd_edpt_open(uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps)
 
   xfer_ctl_t *xfer = XFER_CTL_BASE(epnum, dir);
   xfer->max_size = ep_mps;
-  esp_rom_printf("DCD EP Open: ep %d dir %d size %d\n", epnum, dir, xfer->max_size);
+  esp_rom_printf("DCD EP Open: ep %d type %d dir %d size %d\n", epnum, ep_type, dir, xfer->max_size);
 
   if (dir == EP_DIR_OUT) {
     out_ep[epnum].doepctl |= USB_USBACTEP1_M |
                              ep_type << USB_EPTYPE1_S |
                              (ep_type != USBD_EP_TYPE_ISOC ? USB_DO_SETD0PID1_M : 0) |
-                             xfer->max_size << USB_MPS1_S;
+                             xfer->max_size << USB_MPS1_S |
+                             USB_EPENA0_M | USB_CNAK0_M;
     USB0.daintmsk |= (1 << (16 + epnum));
   } else {
     // "USB Data FIFOs" section in reference manual
@@ -319,7 +320,7 @@ bool dcd_edpt_open(uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps)
 
 void dcd_edpt_close_all()
 {
-  esp_rom_printf("DCD endpoint close all\n");
+  //esp_rom_printf("DCD endpoint close all\n");
   usb_out_endpoint_t *out_ep = &(USB0.out_ep_reg[0]);
   usb_in_endpoint_t *in_ep = &(USB0.in_ep_reg[0]);
 
@@ -374,7 +375,7 @@ uint16_t dcd_edpt_xfer(uint8_t ep_addr, const uint8_t *buffer, uint16_t total_by
 
     // Enable fifo empty interrupt only if there are something to put in the fifo.
     if(total_bytes != 0) {
-      esp_rom_printf("  Transfer fifo mask\n");
+      //esp_rom_printf("  Transfer fifo mask\n");
       USB0.dtknqr4_fifoemptymsk |= (1 << epnum);
     }
   } else {
@@ -412,6 +413,7 @@ void dcd_edpt_stall(uint8_t ep_addr)
 
   uint8_t const epnum = EP_NUM(ep_addr);
   uint8_t const dir = EP_DIR(ep_addr);
+  esp_rom_printf("DCD: stall %d epnum %d dir %d\n", ep_addr, epnum, dir);
 
   if (dir == EP_DIR_IN) {
     // Only disable currently enabled non-control endpoint
@@ -464,6 +466,7 @@ void dcd_edpt_clear_stall(uint8_t ep_addr)
 
   uint8_t const epnum = EP_NUM(ep_addr);
   uint8_t const dir = EP_DIR(ep_addr);
+  esp_rom_printf("DCD: clear stall %d epnum %d dir %d\n", ep_addr, epnum, dir);
 
   if (dir == EP_DIR_IN) {
     in_ep[epnum].diepctl &= ~USB_D_STALL1_M;
@@ -507,7 +510,7 @@ static void receive_packet(xfer_ctl_t *xfer, /* usb_out_endpoint_t * out_ep, */ 
     // claims.
     to_recv_size = (xfer_size > xfer->max_size) ? xfer->max_size : xfer_size;
   }
-  esp_rom_printf("    USB - receive_packet %d\n", to_recv_size);
+  //esp_rom_printf("    USB - receive_packet %d\n", to_recv_size);
 
   uint8_t to_recv_rem = to_recv_size % 4;
   uint16_t to_recv_size_aligned = to_recv_size - to_recv_rem;
@@ -556,7 +559,7 @@ static void transmit_packet(xfer_ctl_t *xfer, volatile usb_in_endpoint_t *in_ep,
   xfer->queued_len = xfer->total_len - remaining;
 
   uint16_t to_xfer_size = (remaining > xfer->max_size) ? xfer->max_size : remaining;
-  esp_rom_printf("    USB - transmit_packet: size %d dieptsiz %X\n", to_xfer_size, in_ep->dieptsiz);
+  //esp_rom_printf("    USB - transmit_packet: size %d dieptsiz %X\n", to_xfer_size, in_ep->dieptsiz);
 
   uint8_t to_xfer_rem = to_xfer_size % 4;
   uint16_t to_xfer_size_aligned = to_xfer_size - to_xfer_rem;
@@ -631,6 +634,8 @@ static void read_rx_fifo(void)
       _setup_packet[0] = (*rx_fifo);
       _setup_packet[1] = (*rx_fifo);
 
+      // only for debug
+      esp_rom_printf("\n  [DEBUG]: %04X %04X\n", USB0.out_ep_reg[2].doepctl, USB0.daintmsk);
       esp_rom_printf("  TUSB IRQ - RX : Setup packet : 0x%08x 0x%08x\n", _setup_packet[0], _setup_packet[1]);
     }
     break;
@@ -725,7 +730,7 @@ static void _dcd_int_handler(void* arg)
 
   if (int_status & USB_USBRST_M) {
     // start of reset
-    esp_rom_printf("dcd_int_handler - reset\n");
+    //esp_rom_printf("dcd_int_handler - reset\n");
     USB0.gintsts = USB_USBRST_M;
     // FIFOs will be reassigned when the endpoints are reopen
     _allocated_fifos = 1;
@@ -733,7 +738,7 @@ static void _dcd_int_handler(void* arg)
   }
 
   if (int_status & USB_RESETDET_M) {
-    ESP_EARLY_LOGV(TAG, "dcd_int_handler - reset while suspend");
+    //ESP_EARLY_LOGV(TAG, "dcd_int_handler - reset while suspend");
     USB0.gintsts = USB_RESETDET_M;
     bus_reset();
   }
@@ -762,7 +767,7 @@ static void _dcd_int_handler(void* arg)
   if (int_status & USB_OTGINT_M)
   {
     // OTG INT bit is read-only
-    ESP_EARLY_LOGV(TAG, "dcd_int_handler - disconnected");
+    //ESP_EARLY_LOGV(TAG, "dcd_int_handler - disconnected");
 
     uint32_t const otg_int = USB0.gotgint;
 

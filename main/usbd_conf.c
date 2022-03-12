@@ -40,6 +40,7 @@
 
 static int ctrl_status = 0;
 static int set_address = 0;
+static int is_stall = 0;
 static int is_transmit = 0;
 static uint8_t transmit_ep = 0;
 static const uint8_t *transmit_buffer = NULL;
@@ -62,10 +63,11 @@ extern USBD_StatusTypeDef USBD_LL_BatteryCharging(USBD_HandleTypeDef *pdev);
   */
 void dcd_event_setup_received(uint8_t* setup_packet)
 {
-  esp_rom_printf("Setup");
+  esp_rom_printf("\nSetup");
   for (int i = 0; i != 8; ++i)
     esp_rom_printf(" %02X", setup_packet[i]);
   esp_rom_printf("\n");
+  is_stall = 0;
   USBD_LL_SetupStage(&usb_device, setup_packet);
 }
 
@@ -77,7 +79,7 @@ void dcd_event_setup_received(uint8_t* setup_packet)
   */
 void dcd_event_xfer_complete(uint8_t ep_addr, uint8_t* buffer)
 {
-  esp_rom_printf("Xfer complete\n");
+  //esp_rom_printf("Xfer complete\n");
   if (is_transmit && ep_addr == transmit_ep) {
     // manual LL_Transmit to edpt_xfer fragementation
     uint16_t new_xfer_size = dcd_edpt_xfer(transmit_ep, transmit_buffer, transmit_size);
@@ -88,12 +90,13 @@ void dcd_event_xfer_complete(uint8_t ep_addr, uint8_t* buffer)
       is_transmit = 0;
     }
   } else if (ep_addr & 0x80) { // IN
-    esp_rom_printf("  IN %02X\n", ep_addr);
+    //esp_rom_printf("  IN %02X\n", ep_addr);
     if (set_address) {
       set_address = 0;
       return; 
     }
     if (ep_addr == 0x80) {
+      // out ack
       dcd_edpt_xfer(0, NULL, 0);
       ctrl_status = 1;
     } else
@@ -101,13 +104,16 @@ void dcd_event_xfer_complete(uint8_t ep_addr, uint8_t* buffer)
       USBD_LL_DataInStage(&usb_device, ep_addr & 0x7F, NULL);
     }
   } else {
-    esp_rom_printf("  OUT %02X\n", ep_addr);
+    //esp_rom_printf("  OUT %02X\n", ep_addr);
     if (ctrl_status) {
       // ignore status xfer out
       ctrl_status = 0;
       return;
     }
+    is_stall = 0;
     USBD_LL_DataOutStage(&usb_device, ep_addr, buffer);
+    // out ack
+    dcd_edpt_xfer(ep_addr, buffer, 64);
     //// First IN wont be delivered to stack (no complete callback)
     //USBD_LL_DataInStage(&usb_device, ep_addr, buffer);
   }
@@ -120,7 +126,7 @@ void dcd_event_xfer_complete(uint8_t ep_addr, uint8_t* buffer)
   */
 void dcd_event_bus_sof()
 {
-  esp_rom_printf("SOF\n");
+  //esp_rom_printf("SOF\n");
   USBD_LL_SOF(&usb_device);
 }
 
@@ -186,7 +192,7 @@ void dcd_event_bus_resume()
   */
 void dcd_event_bus_disconnected()
 {
-  esp_rom_printf("Disconnect\n");
+  //esp_rom_printf("Disconnect\n");
   USBD_LL_DevDisconnected(&usb_device);
 }
 
@@ -201,7 +207,7 @@ void dcd_event_bus_disconnected()
   */
 USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
 {
-  esp_rom_printf("Init\n");
+  //esp_rom_printf("Init\n");
   dcd_init();
   return USBD_OK;
 }
@@ -214,7 +220,7 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
 USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef *pdev)
 {
   (void)pdev;
-  esp_rom_printf("DeInit\n");
+  //esp_rom_printf("DeInit\n");
   return USBD_OK;
 }
 
@@ -226,7 +232,7 @@ USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef *pdev)
 USBD_StatusTypeDef USBD_LL_Start(USBD_HandleTypeDef *pdev)
 {
   (void)pdev;
-  esp_rom_printf("Start\n");
+  //esp_rom_printf("Start\n");
   dcd_connect();
   return USBD_OK;
 }
@@ -239,7 +245,7 @@ USBD_StatusTypeDef USBD_LL_Start(USBD_HandleTypeDef *pdev)
 USBD_StatusTypeDef USBD_LL_Stop(USBD_HandleTypeDef *pdev)
 {
   (void)pdev;
-  esp_rom_printf("Stop\n");
+  //esp_rom_printf("Stop\n");
   dcd_disconnect();
   return USBD_OK;
 }
@@ -255,7 +261,7 @@ USBD_StatusTypeDef USBD_LL_Stop(USBD_HandleTypeDef *pdev)
 USBD_StatusTypeDef USBD_LL_OpenEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps)
 {
   (void)pdev;
-  esp_rom_printf("OpenEP: ep %d type %d mps %d\n", ep_addr, ep_type, ep_mps);
+  //esp_rom_printf("OpenEP: ep %d type %d mps %d\n", ep_addr, ep_type, ep_mps);
   dcd_edpt_open(ep_addr, ep_type, ep_mps);
   return USBD_OK;
 }
@@ -295,7 +301,8 @@ USBD_StatusTypeDef USBD_LL_FlushEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr)
 USBD_StatusTypeDef USBD_LL_StallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr)
 {
   (void)pdev;
-  esp_rom_printf("StallEP: ep %d\n", ep_addr);
+  //esp_rom_printf("StallEP: ep %d\n", ep_addr);
+  is_stall = 1;
   dcd_edpt_stall(ep_addr);
   return USBD_OK;
 }
@@ -309,7 +316,8 @@ USBD_StatusTypeDef USBD_LL_StallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr)
 USBD_StatusTypeDef USBD_LL_ClearStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr)
 {
   (void)pdev;
-  esp_rom_printf("ClearStallEP, ep %d\n", ep_addr);
+  //esp_rom_printf("ClearStallEP, ep %d\n", ep_addr);
+  is_stall = 0;
   dcd_edpt_clear_stall(ep_addr);
   return USBD_OK;
 }
@@ -334,7 +342,7 @@ uint8_t USBD_LL_IsStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr)
 USBD_StatusTypeDef USBD_LL_SetUSBAddress(USBD_HandleTypeDef *pdev, uint8_t dev_addr)
 {
   (void)pdev;
-  esp_rom_printf("SetUSBAddress addr %d\n", dev_addr);
+  //esp_rom_printf("SetUSBAddress addr %d\n", dev_addr);
   dcd_set_address(dev_addr);
   set_address = 1; // dcd_set_address would send a IN ZLP packet
   return USBD_OK;
@@ -351,11 +359,17 @@ USBD_StatusTypeDef USBD_LL_SetUSBAddress(USBD_HandleTypeDef *pdev, uint8_t dev_a
 USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_addr, const uint8_t *pbuf, uint16_t size)
 {
   (void)pdev;
-  if (ep_addr == 0x00) ep_addr = 0x80;
+  ep_addr |= 0x80;
   esp_rom_printf("Transmit: ep %d len %d", ep_addr, size);
   for (int i = 0; i != size; ++i)
     esp_rom_printf(" %02X", pbuf[i]);
   esp_rom_printf("\n");
+
+  if (is_stall) {
+    is_stall = 0;
+    return USBD_OK;
+  }
+
   uint16_t xfer_size = dcd_edpt_xfer(ep_addr, pbuf, size);
   if (xfer_size < size) {
     is_transmit = 1;
@@ -377,7 +391,7 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_addr, c
 USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t *pbuf, uint16_t size)
 {
   (void)pdev;
-  esp_rom_printf("Prepare: ep %d len %d\n", ep_addr, size);
+  //esp_rom_printf("Prepare: ep %d len %d\n", ep_addr, size);
   dcd_edpt_prepare(ep_addr, pbuf, size);
   return USBD_OK;
 }
