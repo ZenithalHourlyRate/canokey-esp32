@@ -3,8 +3,9 @@ idf_component_register(
     "canokey-esp32.c"
     "usbd_conf.c"
     "dcd_esp32sx.c"
+    "littlefs_api.c"
   PRIV_INCLUDE_DIRS "."
-  PRIV_REQUIRES "usb")
+  PRIV_REQUIRES "usb" "spi_flash")
 
 # canokey-core and esp-idf both have mbedtls
 set(MBEDTLS_TARGET_PREFIX "canokey-")
