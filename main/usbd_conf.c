@@ -63,7 +63,7 @@ extern USBD_StatusTypeDef USBD_LL_BatteryCharging(USBD_HandleTypeDef *pdev);
   */
 void dcd_event_setup_received(uint8_t* setup_packet)
 {
-  esp_rom_printf("\nSetup");
+  esp_rom_printf("Setup");
   for (int i = 0; i != 8; ++i)
     esp_rom_printf(" %02X", setup_packet[i]);
   esp_rom_printf("\n");
@@ -112,8 +112,6 @@ void dcd_event_xfer_complete(uint8_t ep_addr, uint8_t* buffer)
     }
     is_stall = 0;
     USBD_LL_DataOutStage(&usb_device, ep_addr, buffer);
-    // out ack
-    dcd_edpt_xfer(ep_addr, buffer, 64);
     //// First IN wont be delivered to stack (no complete callback)
     //USBD_LL_DataInStage(&usb_device, ep_addr, buffer);
   }

@@ -153,11 +153,15 @@ static void enum_done_processing(void)
   if (enum_spd == 0x03) { // Full-Speed (PHY on 48 MHz)
     USB0.in_ep_reg[0].diepctl &= ~USB_D_MPS0_V;    // 64 bytes
     USB0.in_ep_reg[0].diepctl &= ~USB_D_STALL0_M; // clear Stall
+    USB0.out_ep_reg[0].doepctl &= ~USB_MPS0_V;    // 64 bytes
+    USB0.out_ep_reg[0].doepctl &= ~USB_STALL0_M; // clear Stall
     xfer_status[0][EP_DIR_OUT].max_size = 64;
     xfer_status[0][EP_DIR_IN].max_size = 64;
   } else {
     USB0.in_ep_reg[0].diepctl |= USB_D_MPS0_V;     // 8 bytes
     USB0.in_ep_reg[0].diepctl &= ~USB_D_STALL0_M; // clear Stall
+    USB0.out_ep_reg[0].doepctl |= USB_MPS0_V;     // 8 bytes
+    USB0.out_ep_reg[0].doepctl &= ~USB_STALL0_M; // clear Stall
     xfer_status[0][EP_DIR_OUT].max_size = 8;
     xfer_status[0][EP_DIR_IN].max_size = 8;
   }
@@ -267,8 +271,7 @@ bool dcd_edpt_open(uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps)
     out_ep[epnum].doepctl |= USB_USBACTEP1_M |
                              ep_type << USB_EPTYPE1_S |
                              (ep_type != USBD_EP_TYPE_ISOC ? USB_DO_SETD0PID1_M : 0) |
-                             xfer->max_size << USB_MPS1_S |
-                             USB_EPENA0_M | USB_CNAK0_M;
+                             xfer->max_size << USB_MPS1_S;
     USB0.daintmsk |= (1 << (16 + epnum));
   } else {
     // "USB Data FIFOs" section in reference manual
@@ -391,10 +394,14 @@ void dcd_edpt_prepare(uint8_t ep_addr, uint8_t *buffer, uint16_t total_bytes)
 {
   uint8_t const epnum = EP_NUM(ep_addr);
   uint8_t const dir   = EP_DIR(ep_addr);
+  esp_rom_printf("DCD: prepare %d epnum %d dir %d buffer %p total_bytes %d\n", ep_addr, epnum, dir, buffer, total_bytes);
 
   xfer_ctl_t * xfer = XFER_CTL_BASE(epnum, dir);
   xfer->buffer      = buffer;
   xfer->total_len   = total_bytes;
+
+  // enable OUT endpoint
+  dcd_edpt_xfer(ep_addr, buffer, total_bytes);
 }
 
 uint32_t dcd_edpt_get_rx_size(uint8_t ep_addr)
@@ -606,23 +613,23 @@ static void read_rx_fifo(void)
 
   switch (pktsts) {
     case 0x01: // Global OUT NAK (Interrupt)
-      esp_rom_printf("  TUSB IRQ - RX type : Global OUT NAK\n");
+      //esp_rom_printf("  TUSB IRQ - RX type : Global OUT NAK\n");
       break;
 
     case 0x02: { // Out packet recvd
-      esp_rom_printf("  TUSB IRQ - RX type : Out packet\n");
+      //esp_rom_printf("  TUSB IRQ - RX type : Out packet %d %d\n", epnum, EP_DIR_OUT);
       xfer_ctl_t *xfer = XFER_CTL_BASE(epnum, EP_DIR_OUT);
       receive_packet(xfer, bcnt);
     }
     break;
 
     case 0x03: // Out packet done (Interrupt)
-      esp_rom_printf("  TUSB IRQ - RX type : Out packet done\n");
+      //esp_rom_printf("  TUSB IRQ - RX type : Out packet done\n");
       break;
 
     case 0x04: // Step 2: Setup transaction completed (Interrupt)
       // After this event, OEPINT interrupt will occur with SETUP bit set
-      esp_rom_printf("  TUSB IRQ - RX : Setup packet done\n");
+      //esp_rom_printf("  TUSB IRQ - RX : Setup packet done\n");
       USB0.out_ep_reg[epnum].doeptsiz |= USB_SUPCNT0_M;
       break;
 
@@ -634,9 +641,7 @@ static void read_rx_fifo(void)
       _setup_packet[0] = (*rx_fifo);
       _setup_packet[1] = (*rx_fifo);
 
-      // only for debug
-      esp_rom_printf("\n  [DEBUG]: %04X %04X\n", USB0.out_ep_reg[2].doepctl, USB0.daintmsk);
-      esp_rom_printf("  TUSB IRQ - RX : Setup packet : 0x%08x 0x%08x\n", _setup_packet[0], _setup_packet[1]);
+      //esp_rom_printf("  TUSB IRQ - RX : Setup packet : 0x%08x 0x%08x\n", _setup_packet[0], _setup_packet[1]);
     }
     break;
 
@@ -664,7 +669,7 @@ static void handle_epout_ints(void)
       // OUT XFER complete (single packet).q
       if (USB0.out_ep_reg[n].doepint & USB_XFERCOMPL0_M) {
 
-        esp_rom_printf("  TUSB IRQ - EP OUT - XFER complete (single packet)\n");
+        //esp_rom_printf("  TUSB IRQ - EP OUT - XFER complete (single packet)\n");
         USB0.out_ep_reg[n].doepint = USB_XFERCOMPL0_M;
 
         // Transfer complete if short packet or total len is transferred
@@ -690,7 +695,6 @@ static void handle_epin_ints(void)
     xfer_ctl_t *xfer = &xfer_status[n][EP_DIR_IN];
 
     if (USB0.daint & (1 << (0 + n))) {
-      esp_rom_printf("  TUSB IRQ - EP IN %u reg %X\n", n, USB0.in_ep_reg[n].diepint);
       // IN XFER complete (entire xfer).
       if (USB0.in_ep_reg[n].diepint & USB_D_XFERCOMPL0_M) {
         esp_rom_printf("  TUSB IRQ - IN XFER complete!\n");
@@ -791,7 +795,7 @@ static void _dcd_int_handler(void* arg)
 
   if (int_status & USB_RXFLVI_M) {
     // RXFLVL bit is read-only
-    esp_rom_printf("dcd_int_handler - rx!\n");
+    //esp_rom_printf("dcd_int_handler - rx!\n");
 
     // Mask out RXFLVL while reading data from FIFO
     USB0.gintmsk &= ~USB_RXFLVIMSK_M;
@@ -802,7 +806,7 @@ static void _dcd_int_handler(void* arg)
   // OUT endpoint interrupt handling.
   if (int_status & USB_OEPINT_M) {
     // OEPINT is read-only
-    esp_rom_printf("dcd_int_handler - OUT endpoint!\n");
+    esp_rom_printf("\ndcd_int_handler - OUT endpoint!\n");
     handle_epout_ints();
   }
 
