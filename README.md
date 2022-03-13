@@ -22,13 +22,13 @@ It works on modern Linux/Windows/macOS operating systems without additional driv
 
 ## Status
 
-This is a WIP. Code is not cleaned up and some functions are not implemented currectly (dummy stub) now.
+This is a WIP. Code is not cleaned up and some functions are not implemented currectly (dummy stub).
 
 Functions like `device_delay`, atomic functions, LED, and touch detection are not implemented.
 
-The USB stack is now a mixed(缝合) stack, namely driver from tinyUSB but the whole stack from STM32. `usbd_conf.c` is totally a mess. `dcd_esp32sx.c` also needs a clean logic and no more hack.
+The USB stack is now a mixed(缝合) stack, namely driver from tinyUSB but the whole stack from STM32. `usbd_conf.c` is totally a mess. `dcd_esp32sx.c` also needs less hack. The whole stack should be migrated to tinyUSB later.
 
-Currently many crypto operations may timeout or not work due to lack of implementation. I have tested that generating RSA2048 keys did not work. Also, signing using RSA4096 would timeout. However, signning using RSA2048/Ed25519 can work.
+Currently many crypto operations may time out or not work due to lack of implementation. I have tested that generating RSA2048 key did not work. Also, signing using RSA4096 would timeout. However, signing using RSA2048/Ed25519 worked.
 
 ## Hardware
 
@@ -41,15 +41,15 @@ However, this should also work on ESP32-S3 as their USB driver is the same.
 0. Clone the repo and all the submodules
 
 1. Setup the ESP-IDF environment, assume it is in `$IDF_PATH`,
-  ```bash
-  source $IDF_PATH/export.sh
-  ```
+   ```bash
+   source $IDF_PATH/export.sh
+   ```
 
 2. Then configure the project. In `Partition Table` section you should use `Custom Partition Table CSV` (Make sure you have at least 2MB flash) and in `Component config -> ESP System Settings` change `Task Watchdog timeout period` to 60.
-  ```bash
-  idf.py set-target esp32s2
-  idf.py menuconfig
-  ```
+   ```bash
+   idf.py set-target esp32s2
+   idf.py menuconfig
+   ```
 
 3. Then flash and play
    ```bash
